@@ -14,8 +14,8 @@ import com.mastercard.paymenttransfersystem.domain.transaction.service.Transacti
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import javax.transaction.Transactional;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
@@ -61,7 +61,7 @@ public class AccountService implements IAccountService {
     /**
      * @see IAccountService for a general description of the overridden method
      * transfer of money is a five-step proces:
-     * 1. get accounts of sender and recipient,
+     * 1. Check accounts exist,
      * 2. validate the transfer request
      * 3. debit the sender's account
      * 4. credit the recipient's account
@@ -70,12 +70,17 @@ public class AccountService implements IAccountService {
     @Override
     @Transactional
     public Account transferMoney(Long senderAccountId, Long recipientAccountId, BigDecimal amount) {
-        // Get accounts
-        Account sender = getAccountById(senderAccountId);
-        Account recipient = getAccountById(recipientAccountId);
+        if(!accountRepository.existsById(senderAccountId)) {
+            throw new AccountNotFoundException(senderAccountId);
+        }
+        if(!accountRepository.existsById(recipientAccountId)) {
+            throw new AccountNotFoundException(recipientAccountId);
+        }
 
         // Validate request
-        if (sender.getBalance().compareTo(amount) < 0) {
+        BigDecimal senderBalance = accountRepository.getAccountBalance(senderAccountId);
+
+        if (senderBalance.compareTo(amount) < 0) {
             throw new InsufficientFundsException(senderAccountId);
         }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -86,22 +91,19 @@ public class AccountService implements IAccountService {
         }
 
         // Subtract/debit from sender's account
-        sender.setBalance(sender.getBalance().subtract(amount));
-        Account updateAccount = accountRepository.save(sender);
+        accountRepository.updateAccountBalance(amount.negate(), senderAccountId);
 
         // Add/credit to recipient's account
-        recipient.setBalance(recipient.getBalance().add(amount));
-        accountRepository.save(recipient);
+        accountRepository.updateAccountBalance(amount, recipientAccountId);
 
         // Save transaction
-        Transaction transaction = Transaction.builder()
+        transactionService.saveTransaction(Transaction.builder()
                 .senderAccountId(senderAccountId)
                 .recipientAccountId(recipientAccountId)
                 .amount(amount)
                 .currency("USD")
-                .build();
-        transactionService.saveTransaction(transaction);
-        return updateAccount;
+                .build());
+        return getAccountById(senderAccountId);
     }
 
     @Override

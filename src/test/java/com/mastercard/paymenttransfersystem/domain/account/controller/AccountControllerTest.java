@@ -11,7 +11,9 @@ import com.mastercard.paymenttransfersystem.domain.account.model.AccountStatemen
 import com.mastercard.paymenttransfersystem.domain.account.repository.AccountRepository;
 import com.mastercard.paymenttransfersystem.domain.transaction.model.Transaction;
 import com.mastercard.paymenttransfersystem.domain.transaction.repository.TransactionRepository;
+import lombok.SneakyThrows;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -360,6 +363,70 @@ public class AccountControllerTest {
 
     }
 
+    @Test
+    @SneakyThrows
+    void Transfer_twice_to_same_account_concurrently() {
+        // Given
+        Account sender = givenAccount();
+        Account recipient = givenAccount();
+        BigDecimal transferAmount = BigDecimal.valueOf(500);
+        TransferRequestDTO dto = new TransferRequestDTO(recipient.getId(), transferAmount, "USD");
+        HttpEntity<TransferRequestDTO> entity = new HttpEntity<>(dto);
+
+        // When
+        String fullUrl = baseUrl + "/" + sender.getId() + "/transfer";
+        URI url = new URI(fullUrl);
+
+        Thread thread1 = new Thread(new PostRequestTask<>(url, entity));
+        Thread thread2 = new Thread(new PostRequestTask<>(url, entity));
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+
+        // Then
+        BigDecimal senderUpdatedBalance = accountRepository.findById(sender.getId()).get().getBalance();
+        BigDecimal recipientUpdatedBalance = accountRepository.findById(recipient.getId()).get().getBalance();
+
+        assertEquals(sender.getBalance().subtract(transferAmount).subtract(transferAmount), senderUpdatedBalance);
+        assertEquals(sender.getBalance().add(transferAmount).add(transferAmount), recipientUpdatedBalance);
+    }
+
+    @Test
+    @SneakyThrows
+    @Disabled
+    void Transfer_twice_cross_accounts_concurrently() {
+        // Given
+        Account account1 = givenAccount();
+        Account account2 = givenAccount();
+        BigDecimal transferAmount1 = BigDecimal.valueOf(700);
+        BigDecimal transferAmount2 = BigDecimal.valueOf(500);
+        TransferRequestDTO dto1 = new TransferRequestDTO(account1.getId(), transferAmount1, "USD");
+        TransferRequestDTO dto2 = new TransferRequestDTO(account2.getId(), transferAmount2, "USD");
+        HttpEntity<TransferRequestDTO> entity1 = new HttpEntity<>(dto1);
+        HttpEntity<TransferRequestDTO> entity2 = new HttpEntity<>(dto2);
+
+        // When
+        String fullUrl1 = baseUrl + "/" + account2.getId() + "/transfer";
+        String fullUrl2 = baseUrl + "/" + account1.getId() + "/transfer";
+        URI url1 = new URI(fullUrl1);
+        URI url2 = new URI(fullUrl2);
+
+        Thread thread1 = new Thread(new PostRequestTask<>(url1, entity1));
+        Thread thread2 = new Thread(new PostRequestTask<>(url2, entity2));
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+
+        // Then
+        BigDecimal account1UpdatedBalance = accountRepository.findById(account1.getId()).get().getBalance();
+        BigDecimal account2UpdatedBalance = accountRepository.findById(account2.getId()).get().getBalance();
+
+        assertEquals(account1.getBalance().subtract(transferAmount2).add(transferAmount1), account1UpdatedBalance);
+        assertEquals(account2.getBalance().add(transferAmount2).subtract(transferAmount1), account2UpdatedBalance);
+    }
+
     private Account givenAccount() {
         Account account = Account.builder()
                 .balance(BigDecimal.valueOf(10000))
@@ -400,5 +467,22 @@ public class AccountControllerTest {
                 .currency("USD")
                 .build();
         return transactionRepository.saveAll(List.of(t1, t2, t3));
+    }
+
+    public class PostRequestTask<T> implements Runnable {
+        private final URI url;
+        private final HttpEntity<T> request;
+        private final TestRestTemplate restTemplate = new TestRestTemplate();
+
+        public PostRequestTask(URI url, HttpEntity<T> request) {
+            this.url = url;
+            this.request = request;
+        }
+
+        @SneakyThrows
+        @Override
+        public void run() {
+            restTemplate.exchange(url, HttpMethod.PUT, request, String.class);
+        }
     }
 }

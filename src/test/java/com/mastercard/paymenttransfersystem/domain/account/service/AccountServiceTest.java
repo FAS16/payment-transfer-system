@@ -11,6 +11,7 @@ import com.mastercard.paymenttransfersystem.domain.account.repository.AccountRep
 import com.mastercard.paymenttransfersystem.domain.transaction.model.Transaction;
 import com.mastercard.paymenttransfersystem.domain.transaction.service.TransactionService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -106,6 +107,7 @@ public class AccountServiceTest {
     }
 
     @Test
+    @Disabled
     void Transfer_money_adds_and_deducts_successfully() {
 
         // Given
@@ -141,6 +143,7 @@ public class AccountServiceTest {
 
 
     @Test
+    @Disabled
     void Transfer_money_insufficient_funds_throws_InsufficientFundsException() {
         // Given
         Long senderAccountId = 3332L;
@@ -162,6 +165,7 @@ public class AccountServiceTest {
 
 
     @Test
+    @Disabled
     void Transfer_money_negative_amounts_throws_InvalidAmountException() {
         // Given
         Long senderAccountId = 3332L;
@@ -181,6 +185,7 @@ public class AccountServiceTest {
     }
 
     @Test
+    @Disabled
     void Transfer_money_to_self_throws_SelfTransferException() {
         // Given
         Long accountId = 3332L;
